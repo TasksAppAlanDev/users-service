@@ -1,4 +1,10 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  BeforeInsert,
+  BeforeUpdate,
+  Column,
+  Entity,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 
 @Entity({ name: 'users' })
 export class User {
@@ -12,7 +18,20 @@ export class User {
 
   @Column('text', {
     unique: true,
-    nullable: false
+    nullable: false,
   })
-  email: string
+  email: string;
+
+  @Column('boolean', {
+    nullable: false,
+    default: true,
+  })
+  isActive: boolean;
+
+  @BeforeInsert()
+  @BeforeUpdate()
+  checkFields() {
+    this.name = this.name ? this.name.toLowerCase() : this.name;
+    this.email = this.email ? this.email.toLowerCase() : this.email;
+  }
 }
