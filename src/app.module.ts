@@ -4,7 +4,7 @@ import { UsersModule } from './users/users.module';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { envs } from './config';
-
+import { SeedModule } from './seed/seed.module';
 
 @Module({
   imports: [
@@ -18,8 +18,9 @@ import { envs } from './config';
       username: envs.DB_USER,
       password: envs.DB_PASSWORD,
       autoLoadEntities: true,
-      synchronize: true
+      synchronize: true,
     }),
+    SeedModule,
   ],
   controllers: [],
   providers: [],

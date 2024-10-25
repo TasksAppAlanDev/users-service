@@ -1,6 +1,9 @@
 import {
   BadRequestException,
+  ConflictException,
+  HttpStatus,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
@@ -19,8 +22,6 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-
-    private readonly dataSource: DataSource,
   ) {}
 
   async create(createUserDto: CreateUserDto) {
@@ -38,7 +39,11 @@ export class UsersService {
         ...user,
       };
     } catch (error) {
-      this.handleDBErrors(error);
+      logger.error(error.message);
+      throw new RpcException({
+        message: error.message,
+        status: HttpStatus.BAD_REQUEST,
+      });
     }
   }
 
@@ -69,59 +74,81 @@ export class UsersService {
   }
 
   async findOne(id: string) {
-    try {
-      const user = await this.userRepository.findOne({
-        where: {
-          id,
-          isActive: true,
-        },
-      });
-      if (!user) {
-        logger.warn(`User not found with id ${id}`);
-        throw new NotFoundException(`User not found with id ${id}`);
-      }
+    const user = await this.userRepository.findOne({
+      where: {
+        id,
+        isActive: true,
+      },
+    });
 
-      return user;
-    } catch (error) {
-      this.handleDBErrors(error);
+    if (!user) {
+      logger.error(`User not found with id ${id}`);
+      throw new RpcException({
+        message: `User not found with id ${id}`,
+        status: HttpStatus.NOT_FOUND,
+      });
     }
+
+    return user;
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {
-    try {
-      const user = await this.userRepository.preload({
-        id,
-        ...updateUserDto,
+    const user = await this.userRepository.preload({
+      id,
+      ...updateUserDto,
+    });
+
+    if (!user) {
+      logger.error(`User not found with id ${id}`);
+      throw new RpcException({
+        message: `User not found with id ${id}`,
+        status: HttpStatus.NOT_FOUND,
       });
-
-      if (!user) {
-        throw new NotFoundException(`User not found with id ${id}`);
-      }
-
-      await this.userRepository.save(user);
-      return user;
-    } catch (error) {
-      this.handleDBErrors(error);
     }
-  }
+
+    try {
+      await this.userRepository.save(user);
+    } catch (error) {
+      if (error.code === '23505') {
+        logger.error(error.detail);
+        throw new RpcException({
+          message: error.detail,
+          status: HttpStatus.BAD_REQUEST,
+        });
+      }
+    }
+    return user;
+  } 
 
   async softDeleteUser(id: string) {
-    try {
-      const user = await this.findOne(id);
-      user.isActive = false;
-      const updateUser = await this.userRepository.save(user);
+    const user = await this.findOne(id);
 
-      return updateUser;
-    } catch (error) {
-      this.handleDBErrors(error);
+    if (!user) {
+      logger.error(`User not found with id ${id}`);
+      throw new RpcException({
+        message: `User not found with id ${id}`,
+        status: HttpStatus.NOT_FOUND,
+      });
     }
+
+    user.isActive = false;
+    const deleteTask = await this.userRepository.save(user);
+
+    return deleteTask;
   }
 
   private handleDBErrors(error: any): never {
-    if (error.code === '23505') throw new BadRequestException(error.detail);
+    if (error.code === '23505') {
+      logger.error(`Conflict error: ${error.message}`);
+      throw new ConflictException('Conflict e');
+    }
 
-    logger.error(error.message);
+    if (error instanceof NotFoundException) {
+      logger.error(`Resource not found: ${error.message}`);
+      throw new NotFoundException('Not found');
+    }
 
-    throw new RpcException(error.message);
+    logger.error(`Database error: ${error.message}`);
+    throw new InternalServerErrorException('Internal server error');
   }
 }
